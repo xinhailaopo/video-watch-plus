@@ -1,0 +1,45 @@
+--- a/vw.py
++++ b/vw.py
+@@ -207,15 +207,38 @@
+ 
+ 
+ def magick(sub, *args):
+-    """拼出 ImageMagick 命令：7.x 走 magick 聚合入口，6.x 走独立命令。"""
++    """拼出 ImageMagick 命令：7.x 走 magick 聚合入口，6.x 走独立命令。
++
++    本机实测（ImageMagick 7.1.2-32 Q16 x64 portable / win64）：
++      magick convert a b -append out  -> 失败：no decode delegate for `convert'
++                                          （convert 未被识别为子命令，被当成输入文件名）
++      magick montage ...              -> 成功
++      magick a b -append out          -> 成功（IM7 原生写法，convert 的功能由裸入口承担）
++    montage / identify / compare / composite / mogrify / stream / conjure 均被识别，
++    唯独 convert 不是，故 7.x 下 convert 必须退化为裸入口，否则 seq / sheet / --diff 全部报错。
++    """
+     major, exe = resolve_magick()
+-    prefix = [exe, sub] if major >= 7 else [shutil.which(sub) or sub]
++    if major >= 7:
++        prefix = [exe] if sub == "convert" else [exe, sub]
++    else:
++        prefix = [shutil.which(sub) or sub]
+     return run([*prefix, *args])
+ 
+ 
+ def escape_filter_path(path):
+-    """ffmpeg filter 参数里冒号是分隔符：Windows 盘符要转义，反斜杠统一成正斜杠。"""
+-    return path.replace("\\", "/").replace(":", "\\:")
++    """ffmpeg filter 参数里冒号是分隔符：Windows 盘符要转义，反斜杠统一成正斜杠。
++
++    本机实测（ffmpeg N-126965 win64-gpl, drawtext）：
++      fontfile=C:/x.ttf        -> 失败
++      fontfile=C\\:/x.ttf      -> 失败   （仅转义冒号，ffmpeg 把 \\: 当分隔符吃掉）
++      fontfile='C\\:/x.ttf'    -> 成功   （转义冒号 + 整体加单引号）
++      fontfile=C\\\\:/x.ttf    -> 成功
++    因此 Windows 上必须给路径整体加单引号，否则任何带盘符的字体都读不到。
++    """
++    p = path.replace("\\", "/").replace(":", "\\:")
++    if os.name == "nt":
++        return "'" + p + "'"
++    return p
+ 
+ 
+ def find_font():

@@ -1,0 +1,56 @@
+# NOTICE
+
+## 上游归属
+
+本项目 **video-watch-plus** 是以下项目的**衍生作品**（derivative work）：
+
+| | |
+|---|---|
+| 项目 | `video-watch-skill` |
+| 仓库 | https://github.com/CFITCorporation/video-watch-skill |
+| 作者 | CFITCorporation（站点 cfitsec.cn；B 站 `@叛逆蓝牙` / StarryAria） |
+| 许可 | MIT License |
+| 版权 | Copyright (c) 2026 CFITSec |
+
+上游的核心思想——**"ffmpeg 看全部帧（零 token），模型只看几十帧，两者靠时间戳缝合"**，
+以及 `probe` / `plan` / `sheet` / `grid` / `seq` / `read` / `report` 这套量测与图版方法论，
+均归上游所有。本项目沿用并扩展了它。
+
+## 本仓库包含的上游文件
+
+| 路径 | 来源 | 改动 |
+|---|---|---|
+| `vendor/vw.py` | 上游 `vw.py` | **含两处 Windows 兼容性修补**，见 `patches/vw-windows-fixes.patch` |
+| `vendor/vwtools.py` | 上游 `vwtools.py` | 未改动 |
+| `vendor/LICENSE.video-watch` | 上游 `LICENSE` | 原样保留（MIT 要求保留版权声明） |
+
+MIT 许可允许修改与再分发，条件是**保留版权声明与许可声明**。上表的原样保留即为履行该条件。
+
+## 本项目新增（不含上游代码）
+
+| 路径 | 性质 |
+|---|---|
+| `SKILL.md` | 新写（技能操作手册 + 音频域铁律 + 三路互校） |
+| `README.md` / `README.en.md` | 新写 |
+| `scripts/audio_probe.py` | 新写：声学侦察（语音 / 音乐 / 纯音 / 静音） |
+| `scripts/asr_hallucination_check.py` | 新写：ASR 幻觉证伪 |
+| `scripts/build_testclip.py` | 新写：带已知基准真值的验收素材生成器 |
+| `scripts/setup-windows.ps1` | 新写：Windows 一键环境安装 |
+| `references/*.md` | 新写 |
+| `verification/*.md` | 新写：带真值对照的实测记录 |
+| `patches/vw-windows-fixes.patch` | 新写：对上游的修补差异 |
+
+## 第三方依赖（本仓库不分发其代码）
+
+| 依赖 | 许可 | 用途 |
+|---|---|---|
+| ffmpeg / ffprobe | LGPL / GPL（取决于构建） | 量测、抽帧、图版 |
+| ImageMagick | ImageMagick License（类 Apache） | 拼贴图版、差分合成 |
+| faster-whisper | MIT | 语音转写（**可选**） |
+| CTranslate2 | MIT | faster-whisper 推理后端（**可选**） |
+| PyAV | BSD-3-Clause | 音频解码（**可选**，需 `<19`） |
+| numpy | BSD-3-Clause | 声学量测 |
+| 7-Zip 的 `7zr.exe` | LGPL | 解包 ImageMagick 的 `.7z`（由安装脚本在运行时下载，不随仓库分发） |
+
+上游工具要求 ffmpeg 为**完整构建**（含 `scdet` `freezedetect` `silencedetect`
+`tblend` `signalstats` `tile` `drawtext`）。安装脚本会逐项校验。
