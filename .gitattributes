@@ -1,0 +1,17 @@
+# 统一换行，避免跨平台 diff 噪音
+* text=auto eol=lf
+
+# PowerShell 脚本按字节精确保留（-text），因为：
+#   Windows PowerShell 5.1 对【无 BOM 的 .ps1】会按系统 ANSI(GBK) 解析，
+#   中文被读坏会吃掉字符串收尾引号，产生一串假的语法错误。
+#   所以 scripts/setup-windows.ps1 必须以带 BOM 的 UTF-8 提交；
+#   而 working-tree-encoding=UTF-8 之类属性会在检出时把 BOM 剥掉，反而毁掉它。
+# 详见 references/windows-setup.md 的"坑 5"。
+*.ps1 -text
+
+# 二进制
+*.png binary
+*.jpg binary
+*.7z  binary
+*.zip binary
+*.mp4 binary

@@ -147,6 +147,56 @@ https://github.com/ImageMagick/ImageMagick/releases/download/7.1.2-32/ImageMagic
 
 ---
 
+## 坑 5：PowerShell 5.1 读**无 BOM** 的 UTF-8 脚本会按 ANSI 解析
+
+本仓库的 `scripts/setup-windows.ps1` 因此**必须带 UTF-8 BOM**。
+
+**症状**：脚本语法明明正确，`-File` 运行却报一串莫名其妙的解析错误：
+
+```
+line 119: 表达式或语句中包含意外的标记"}。"
+line 121: 表达式或语句中包含意外的标记"}。"
+line 158: 语句块或类型定义中缺少右"}"。
+```
+
+而括号平衡检查显示**完全平衡**——因为问题不在括号。
+
+**根因**：Windows PowerShell 5.1 判断脚本编码时，**有 BOM 才按 UTF-8 读，没有 BOM 就按系统 ANSI 代码页读**
+（中文系统上是 GBK）。于是脚本里的中文被拆成错误的字节序列，**多字节错位会吃掉字符串的收尾引号**：
+
+```powershell
+# 源码（UTF-8）
+if ($o -match 'Version:') { $subs += "$s=识别" } else { $subs += "$s=不识别" }
+
+# PS 5.1 按 GBK 误读后
+if ($o -match 'Version:') { $subs += "$s=璇嗗埆" } else { $subs += "$s=涓嶈瘑鍒? }
+                                                                          ↑ 收尾引号被吃掉
+```
+
+字符串没闭合，后面所有 `}` 就都成了"意外的标记"。
+
+**修法**：写脚本时显式带 BOM。
+
+```powershell
+$txt = [System.IO.File]::ReadAllText($path, [System.Text.Encoding]::UTF8)
+[System.IO.File]::WriteAllText($path, $txt, (New-Object System.Text.UTF8Encoding($true)))  # $true = 带 BOM
+```
+
+**自查**：
+
+```powershell
+$b = [System.IO.File]::ReadAllBytes($path)
+$hasBom = ($b[0] -eq 0xEF -and $b[1] -eq 0xBB -and $b[2] -eq 0xBF)
+$err = $null
+[void][System.Management.Automation.Language.Parser]::ParseFile($path, [ref]$null, [ref]$err)
+```
+
+> 顺带一个同源问题：在 `$ErrorActionPreference = 'Stop'` 下，**native 命令写 stderr 会被 PS 5.1 升级成终止错误**。
+> 探测"某个命令是否可用"这类代码必然会产生 stderr，必须在探测期间把偏好临时降级为 `'Continue'`，
+> 否则脚本会在探测处直接中断。`2>$null` 单独用**不够**。
+
+---
+
 ## 一个测试素材层面的坑（非工具问题）
 
 造验收素材时，`drawbox` 放在 `concat` **之前**的话，它的时间基是"段内 0..N 秒"而不是全片，

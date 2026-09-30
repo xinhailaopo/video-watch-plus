@@ -1,4 +1,4 @@
-<#
+﻿<#
 setup-windows.ps1 —— 在 Windows 上把 video-watch 的依赖一次装齐。
 
 它做的事（按顺序，每步都会校验）
@@ -120,15 +120,21 @@ if (-not $SkipDownload -and -not $Magick) {
 }
 
 if ($Magick -and (Test-Path $Magick)) {
-    $v = (& $Magick -version 2>&1 | Select-Object -First 1)
+    $v = (& $Magick -version 2>$null | Select-Object -First 1)
     Ok "ImageMagick：$v"
     # 注意：IM7 的 `magick convert` 入口在部分构建里不被识别（会被当成文件名），
     # vendor/vw.py 已针对这点做了退化处理，见 patches/vw-windows-fixes.patch。
+    # 探测时必须把 stderr 丢掉，并临时把 $ErrorActionPreference 降级：
+    # 测"不识别"的那一项本来就会往 stderr 写错误，而 PS 5.1 在 'Stop' 偏好下
+    # 会把 native 命令的 stderr 升级成终止错误，从而中断整个脚本。
     $subs = @()
+    $savedEap = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
     foreach ($s in @('montage', 'identify', 'convert')) {
-        $o = (& $Magick $s -version 2>&1 | Select-Object -First 1)
+        $o = (& $Magick $s -version 2>$null | Select-Object -First 1)
         if ($o -match 'Version:') { $subs += "$s=识别" } else { $subs += "$s=不识别" }
     }
+    $ErrorActionPreference = $savedEap
     Info ("magick 子命令：{0}" -f ($subs -join '  '))
 } else { Warn '未找到 ImageMagick（grid/seq/sheet 会失败）' }
 
@@ -138,13 +144,23 @@ if ($Magick -and (Test-Path $Magick)) {
 $cfgDir = Join-Path $env:USERPROFILE '.config\video-watch'
 New-Item -ItemType Directory -Force -Path $cfgDir | Out-Null
 $cfgPath = Join-Path $cfgDir 'vw.config.json'
-$ffprobe = ''
-if ($Ffmpeg) { $ffprobe = Join-Path (Split-Path $Ffmpeg) 'ffprobe.exe' }
+
+# 注意：PowerShell 5.1 不支持把 `if` 当表达式直接写进哈希表的值里（PS7 才可以）。
+# 先把值算好再组表，否则脚本会在解析阶段就报"意外的标记 }"。
+$ffmpegVal = ''
+if ($Ffmpeg) { $ffmpegVal = $Ffmpeg }
+$ffprobeVal = ''
+if ($Ffmpeg) {
+    $cand = Join-Path (Split-Path $Ffmpeg) 'ffprobe.exe'
+    if (Test-Path $cand) { $ffprobeVal = $cand }
+}
+$magickVal = ''
+if ($Magick) { $magickVal = $Magick }
 
 $cfg = [ordered]@{
-    ffmpeg  = if ($Ffmpeg) { $Ffmpeg } else { '' }
-    ffprobe = if (Test-Path $ffprobe) { $ffprobe } else { '' }
-    magick  = if ($Magick) { $Magick } else { '' }
+    ffmpeg  = $ffmpegVal
+    ffprobe = $ffprobeVal
+    magick  = $magickVal
     font    = $Font
     outdir  = ''
     defaults = [ordered]@{ skeleton = 16; max = 36; cols = 5; panel = 'medium' }
@@ -154,7 +170,7 @@ $cfg = [ordered]@{
 Ok "已写用户级配置：$cfgPath"
 
 # 环境变量：给"之后新启动"的 shell 用
-foreach ($kv in @(@('VW_FFMPEG', $Ffmpeg), @('VW_FFPROBE', $ffprobe), @('VW_MAGICK', $Magick), @('VW_FONT', $Font))) {
+foreach ($kv in @(@('VW_FFMPEG', $ffmpegVal), @('VW_FFPROBE', $ffprobeVal), @('VW_MAGICK', $magickVal), @('VW_FONT', $Font))) {
     if ($kv[1]) { [Environment]::SetEnvironmentVariable($kv[0], $kv[1], 'User') }
 }
 # ASR 相关的两个变量：国内环境必须（直连 HF 超时；Xet 域名不可达会报 401）
