@@ -128,6 +128,58 @@ pip install faster-whisper "av<19" numpy
 
 补丁见 [`patches/vw-windows-fixes.patch`](patches/vw-windows-fixes.patch)。
 
+> ⚠️ **这两处是环境相关的，不是"所有 Windows 都会必现"。**
+> ffmpeg 的版本/构建方式、ImageMagick 是 dll 版还是 portable 版、系统区域设置，
+> 都会影响是否触发。例如 `drawtext` 的路径解析在不同 libfreetype/libfontconfig 构建上表现并不一致；
+> `magick convert` 的兼容入口在 6.x 与不同 7.x 小版本之间也有差异。
+>
+> 所以本仓库把它当**兼容性文档**来读，而不是当"已知必现 bug"：
+> [`references/windows-setup.md`](references/windows-setup.md) 给的是
+> **实测对照 + 自查命令**，你先在自己机器上跑一遍自查，看是哪一种表现，再决定要不要打补丁。
+> 补丁只改两个函数，且仅在 `os.name == "nt"` 时改变行为，打了也不影响 macOS/Linux。
+
+---
+
+## 两个技能一起用：看现场 + 做取证
+
+本技能解决"把视频变成可核算的结论"，但有一类信息它结构上拿不到：**语境**。
+弹幕、标签、评论、相关推荐、登录态下的内容 —— 这些只存在于实时浏览器里。
+
+配合 [`@wxg-prc-cpg/browser-skill-dsh-plugin`](https://www.npmjs.com/package/@wxg-prc-cpg/browser-skill-dsh-plugin)
+（底层是腾讯开源的 [BrowserSkill](https://github.com/Tencent/BrowserSkill)）使用时，
+结论的完整度会有明显差别。一次实测的例子：
+
+- **落盘路（本技能）**给到：帧精确量测、烧录字幕全文、6 段带时间戳转写，并**纠正了 ASR 的 3 处同音错字**；
+- **实时路（browser-skill）**补齐了落盘路结构上拿不到的三件事：
+  页面标签（`搞笑 / AI / claude / deepseek娘` 直接点明了画面里"蓝发→橙发"在指代什么）、
+  一条把笑点说破的弹幕（`坏了，检测到国区用户了` —— 画面与音轨都只说了"角色消失"，**没说是为什么**）、
+  以及相关推荐确认这是成套的梗系列。
+
+> **落盘路回答"发生了什么"；实时路回答"这件事在什么语境里"。**
+
+分工表、推荐工作流（8 步）、browser-skill 的启用前提与四个实测坑，
+见 [`references/with-browser-skill.md`](references/with-browser-skill.md)。
+
+---
+
+## 强烈建议：让 agent 来装
+
+本技能与 browser-skill 都属于「装了要用起来才算数」的类型，安装路径上有一堆
+**只有踩过才知道**的细节：PATH 究竟是谁的 PATH、daemon 能不能从当前进程树分离、
+端口对不对、模型从哪个源下、`av` 的版本区间是多少……
+
+所以推荐做法不是照着文档一处处试，而是把仓库交给 agent：
+
+> 「按 `SKILL.md` 把环境装好，装完跑 `vendor/vw.py doctor` 和 `scripts/build_testclip.py` 验收，
+> 把踩到的坑补进 `references/`」
+
+理由：agent 能**读源码验证而不是猜**（本仓库两处缺陷就是靠读 `escape_filter_path()`
+源码 + 写对照实验定位的）、能在失败处**继续挖**（"TCP 不通但 HTTP 通"这种矛盾，
+人容易归因为"网络问题"就停手）、并且能把过程**固化成可复现的脚本**
+（`scripts/setup-windows.ps1` 就是这么来的）。
+
+人只需要在**必须由人做**的地方动手 —— 比如浏览器扩展的安装与授权。
+
 ---
 
 ## 仓库结构
@@ -147,6 +199,7 @@ scripts/
 references/
   windows-setup.md              Windows 依赖坑的完整解法
   verification.md               三路互校 playbook 与两类幻觉
+  with-browser-skill.md         与 browser-skill 配合：看现场 + 做取证（新增）
 verification/
   record-*.md                   带真值对照的实测记录
 vendor/                         上游 MIT 代码（vw.py 已打补丁 + vwtools.py + 上游 LICENSE）

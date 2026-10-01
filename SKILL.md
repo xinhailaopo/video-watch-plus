@@ -148,6 +148,52 @@ manifest 声称取样于 3.2s / 3.7s
 
 ---
 
+## 与 browser-skill 配合：看现场 + 做取证
+
+本技能与 [`@wxg-prc-cpg/browser-skill-dsh-plugin`](https://www.npmjs.com/package/@wxg-prc-cpg/browser-skill-dsh-plugin)
+（底层 [Tencent/BrowserSkill](https://github.com/Tencent/BrowserSkill)）是**互补**关系，不是替代：
+
+| | browser-skill（实时） | 本技能（落盘） |
+|---|---|---|
+| 下载 | 不需要 | 需要 |
+| 取帧 | 按调用节奏采样，间隔不匀 | 任意时刻精确取帧 + 逐帧量测 |
+| **声音** | ❌ **拿不到**（截图采不到音频） | ✅ 声学侦察 + ASR |
+| 读小字 | 受截图分辨率限制 | 裁切放大（唯一可信通道） |
+| **独有能力** | **弹幕/标签/评论/相关推荐/登录态/可交互** | 可复现、可核算的取证交付 |
+
+> **落盘路回答"发生了什么"；实时路回答"这件事在什么语境里"。**
+
+**什么时候该切到实时路**：量测或转写都拿到了、但结论里出现"我不知道为什么"的时候。
+实测一次：画面与音轨都只显示"角色化作星点消失"，**为什么消失**只存在于一条弹幕里；
+画面的"蓝发→橙发"具体在指代什么，也是页面标签点明的。
+
+**caveat**：browser-skill 的链路是 `bsk` CLI + 本地 daemon + 浏览器扩展 + dsh 插件四件套，
+每台机器都要配一次，且有若干只有踩过才知道的坑（PATH 归属、daemon 无法从沙箱进程树分离、
+默认 10 分钟空闲自退、浏览器没开导致 `0 browsers connected`）。
+完整清单见 [`references/with-browser-skill.md`](references/with-browser-skill.md)。
+
+---
+
+## 关于安装：请让 agent 来做
+
+本技能的安装路径上有一堆**只有踩过才知道**的细节（PATH 究竟是谁的 PATH、
+`av<19` 的版本区间、HF 镜像与 Xet 传输、ffmpeg 必须验 7 个滤镜……）。
+照着文档一处处试的成本远高于把仓库直接交给 agent：
+
+> 「按 `SKILL.md` 把环境装好，装完跑 `vendor/vw.py doctor` 和 `scripts/build_testclip.py` 验收，
+> 把踩到的坑补进 `references/`」
+
+理由是 agent 能读源码验证（本仓库两处 Windows 缺陷就是读 `escape_filter_path()` 源码
++ 写对照实验定位的）、能在失败处继续挖、并且能把过程固化成 `scripts/setup-windows.ps1` 这种可复现脚本。
+
+**必须由人做的只有一件事**：浏览器扩展的安装与授权（browser-skill 上游明确要求用户本人完成）。
+
+> ⚠️ `patches/vw-windows-fixes.patch` 修的两处缺陷是**环境相关**的 ——
+> ffmpeg 版本/构建、ImageMagick 是 dll 版还是 portable 版、系统区域设置，都会影响是否触发。
+> 先按 `references/windows-setup.md` 里的自查命令确认**你这台机器的表现属于哪一种**，再决定打不打补丁。
+
+---
+
 ## 本仓库相对上游的改动
 
 本技能是 [`CFITCorporation/video-watch-skill`](https://github.com/CFITCorporation/video-watch-skill)（MIT，© 2026 CFITSec）
@@ -159,8 +205,9 @@ manifest 声称取样于 3.2s / 3.7s
 | `scripts/asr_hallucination_check.py` | 幻觉证伪（开/关 VAD 对照 + 重复模板句检测） |
 | `scripts/build_testclip.py` | 生成**带已知基准真值**的验收素材 |
 | `scripts/setup-windows.ps1` | Windows 一键环境（含 7 个必需滤镜的逐项校验） |
-| `patches/vw-windows-fixes.patch` | 上游 `vw.py` 的两处 Windows 缺陷修补（详见 `references/windows-setup.md`） |
+| `patches/vw-windows-fixes.patch` | 上游 `vw.py` 的两处 Windows 缺陷修补（**环境相关**，详见 `references/windows-setup.md` 开头的自查说明） |
 | `references/verification.md` | 三路互校 playbook 与两类幻觉的完整记录 |
+| `references/with-browser-skill.md` | 与 browser-skill 配合：分工表、8 步工作流、启用前提与四个实测坑 |
 | `verification/` | 带真值对照的实测记录 |
 
 详细用法与踩坑记录见 `references/`；上游工具的完整手册见 `vendor/` 内上游自带的 `SKILL.md` 说明（本文件已覆盖必要部分）。

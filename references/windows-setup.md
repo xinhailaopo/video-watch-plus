@@ -1,7 +1,38 @@
-# Windows 环境：四个必须知道的坑
+# Windows 环境：必须知道的坑（附实测对照）
 
-本文件记录在 Windows 上把这条链路跑通所踩过的全部坑，每条都有**实测对照**而非推测。
+本文件记录在 Windows 上把这条链路跑通所踩过的坑，每条都有**实测对照**而非推测。
 按顺序照做，或用 `scripts/setup-windows.ps1` 一键完成。
+
+> ## ⚠️ 先读这一条：这些都是**环境相关**的表现，不是"人人必现"
+>
+> 本文件里的"坑"来自**特定环境**的实测：
+>
+> ```
+> Windows 11
+> ffmpeg N-126965-gd85cdd2597-20260929（win64-gpl 完整构建）
+> ImageMagick 7.1.2-32 Q16 x64 portable
+> Python 3.13.14        系统区域：中文（GBK 代码页）
+> ```
+>
+> 换一个 ffmpeg 构建、换成 ImageMagick 的 dll 版、或把系统区域改成英文，
+> **表现都可能不一样**。比如：
+>
+> - `drawtext` 的路径解析在不同 libfreetype/libfontconfig 构建之间并不一致；
+> - `magick convert` 的兼容入口在 6.x 与不同 7.x 小版本之间也有差异；
+> - `escape_filter_path()` 那种"多字节错位吃掉引号"的现象，**只在非 UTF-8 代码页上才出现**
+>   （英文系统按 CP1252 读，结果又不相同）。
+>
+> **所以正确用法是**：把下面的**自查命令**先在自己的机器上跑一遍，看你的环境属于哪一种表现，
+> 再决定要不要动手。不要因为文档里写了"❌ 失败"就认定自己一定也会失败。
+>
+> 各条自查命令都写在该坑的正文里；最省事的整体自查是：
+>
+> ```powershell
+> python vendor\vw.py doctor                              # 必需项是否齐备
+> ffmpeg -hide_banner -filters | Select-String '\b(scdet|freezedetect|silencedetect|tblend|signalstats|tile|drawtext)\b'
+> ffmpeg -version | Select-String 'enable-libfreetype'
+> magick montage -version                                # 以及 identify / convert 各自试一次
+> ```
 
 ---
 

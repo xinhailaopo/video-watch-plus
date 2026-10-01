@@ -117,6 +117,64 @@ Both were located with measured comparisons and patched here (see [`references/w
 
 Patch: [`patches/vw-windows-fixes.patch`](patches/vw-windows-fixes.patch).
 
+> ⚠️ **Both are environment-dependent — not "every Windows machine hits them".**
+> The ffmpeg version/build, whether ImageMagick is the DLL or portable build, and the system locale
+> all affect whether they trigger. For instance `drawtext` path parsing differs between builds with
+> and without libfreetype/libfontconfig, and `magick convert`'s compatibility entry varies across
+> 6.x and different 7.x patch levels.
+>
+> So read this as a **compatibility note, not a universal bug report**:
+> [`references/windows-setup.md`](references/windows-setup.md) gives **measured comparisons plus self-check
+> commands** — run the self-check on your own machine, see which behaviour you get, then decide
+> whether to apply the patch. It touches two functions and only changes behaviour when
+> `os.name == "nt"`, so it is safe on macOS/Linux.
+
+---
+
+## Use it together with browser-skill: watch the scene + do the forensics
+
+This skill turns video into accountable conclusions, but one class of information is structurally
+out of its reach: **context** — danmaku, page tags, comments, related videos, anything behind a login.
+
+Paired with [`@wxg-prc-cpg/browser-skill-dsh-plugin`](https://www.npmjs.com/package/@wxg-prc-cpg/browser-skill-dsh-plugin)
+(built on Tencent's open-source [BrowserSkill](https://github.com/Tencent/BrowserSkill)),
+the result is markedly more complete. A measured example:
+
+- **Offline path (this skill)** gave: frame-accurate measurement, the full burned-in subtitle text,
+  six timestamped transcript segments — and **corrected 3 homophone errors** in the ASR output.
+- **Live path (browser-skill)** added three things the offline path cannot reach:
+  page tags (`搞笑 / AI / claude / deepseek娘` — which pinned down what the on-screen
+  blue→orange transformation was actually referring to), a danmaku line that delivered the punchline
+  (`坏了，检测到国区用户了` — picture and audio only showed the character vanishing,
+  **never why**), and related videos confirming a whole meme series.
+
+> **The offline path answers "what happened"; the live path answers "in what context".**
+
+Division of labour, a recommended 8-step workflow, and browser-skill's prerequisites plus four
+measured pitfalls: [`references/with-browser-skill.md`](references/with-browser-skill.md).
+
+---
+
+## Strongly recommended: let an agent do the install
+
+Both this skill and browser-skill only count as "installed" once they actually run, and the install
+path is full of details **you only learn by hitting them**: whose PATH is the relevant PATH, whether
+the daemon can detach from the current process tree, whether the port matches, which mirror the model
+comes from, what version range `av` must be in…
+
+So instead of working through the docs step by step, hand the repo to an agent:
+
+> "Install the environment per `SKILL.md`, verify with `vendor/vw.py doctor` and
+> `scripts/build_testclip.py`, and record every pitfall you hit into `references/`"
+
+Why: an agent **verifies by reading source instead of guessing** (both defects here were located by
+reading `escape_filter_path()` and running controlled comparisons), **keeps digging past failures**
+(faced with "TCP fails but HTTP succeeds", a human tends to stop at "network problem"), and
+**turns the process into a reproducible script** (`scripts/setup-windows.ps1` came from exactly that).
+
+Humans only need to do the parts that **must** be done by a human — such as installing and
+authorising the browser extension.
+
 ---
 
 ## Repository layout
