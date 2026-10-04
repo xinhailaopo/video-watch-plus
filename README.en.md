@@ -18,44 +18,89 @@ And "hearing" a video is worse: **an ASR model will not tell you it heard nothin
 
 This skill handles both at once:
 
-> **ffmpeg looks at every frame (zero tokens) + acoustic measurement decides whether speech exists at all.
-> The model only looks at a few dozen frames and assigns names.**
+> **ffmpeg looks at every frame (zero tokens) + acoustic measurement judges whether the track even
+> sounds like speech. The model only looks at a few dozen frames and assigns names.**
 
-One-line criterion: **measurement nominates candidates, eyes assign names; acoustics decide presence, ASR supplies content.**
+One-line criterion: **measurement nominates candidates, eyes assign names; acoustics judge plausibility, ASR supplies content, and the ASR VAD has the final say on whether speech exists.**
 
 ---
 
 ## Three things it does that "sample frames and show the model" does not
 
-### 1. Acoustic reconnaissance — prove whether speech exists before trusting any transcript
+### 1. Acoustic reconnaissance — measure whether speech is plausible before trusting any transcript
 
-`scripts/audio_probe.py` uses numpy only, derives interpretable physical quantities from the waveform
-and spectrum, and returns a verdict:
+`scripts/audio_probe.py` uses numpy only, derives **recomputable** physical quantities from the waveform
+and spectrum, and returns a verdict. Every number below is a measured value from
+[`verification/record-2026-09-30.md`](verification/record-2026-09-30.md):
 
-| Signal | Music | Speech | Pure tone |
-|---|---|---|---|
-| Onset-envelope autocorrelation peak (beat) | **high** (0.86 measured) | low (0.17) | ~0 (0.001) |
-| Spectral flatness | **very low** (0.0001) | mid (0.023) | very low (3e-05) |
-| Per-second loudness swing | **small** (6.3 dB) | large (19.1 dB) | huge |
-| Tonal concentration | low | low | **high** (0.58) |
+| Signal | Pure BGM | Speech | Pure tone | What it actually discriminates |
+|---|---|---|---|---|
+| Onset-envelope autocorrelation peak (beat) | **0.857** | 0.165 | 0.001 | steady beat ↔ none |
+| Per-second loudness swing | **6.3 dB** | **19.1 dB** | 98.9 dB | continuous music bed ↔ speech with starts and stops |
+| Tonal concentration | low | low | **0.576** | isolates "pure tone / alert beep" |
+| 85% spectral rolloff | **466 Hz** | **1277 Hz** | 445 Hz | presence of high-frequency transients |
+| Spectral flatness | 0.0001 | 0.023 | 0.00003 | harmonic structure (**only** separates "noise ↔ not noise") |
+
+Note the last row: **spectral flatness alone cannot separate music from a pure tone** (both are very low);
+what isolates a pure tone is **tonal concentration**. The verdict reads all of these together — no single
+one decides on its own.
 
 It performs **no recognition** — only measurement, the same design philosophy as `probe`.
+It therefore often returns an honest abstention:
+
+```
+verdict  no clear speech signature, and no music criterion met (confidence low)
+  - music criterion not met
+  - tonal concentration 0.202, spectral flatness 0.0226
+  - hand this track to ASR and trust the VAD result
+```
 
 ### 2. Hallucination falsification — was the transcript heard, or fabricated?
 
 `scripts/asr_hallucination_check.py` runs both "VAD on" and "all rejection thresholds removed,
-force output", then decides using **whether disjoint time windows emit identical text**:
+force output", then decides with two criteria — **both share one precondition: the VAD produced no
+output at all**; either one is enough:
+
+- **Criterion 1** — VAD produces no output, **and** forced mode emits **identical** text in disjoint
+  time windows;
+- **Criterion 2** — VAD produces no output **and** the model self-reports `no_speech` ≥ 0.4.
+  VAD does not depend on the language model, so its silence and the model's own `no_speech` are two
+  independent pieces of evidence; when both say "nobody is talking", fluent text does not override them.
+
+> That precondition matters. On the 78-second clip mentioned below, the VAD found 18 real lines while
+> forced mode degenerated into a stream of `'这'` / `'这这'` / `'这这这'` — repeated text in disjoint
+> windows. Without the precondition, criterion 1 would brand a plainly speech-bearing track as a
+> hallucination; with it, the tool correctly returns "transcript trustworthy, but segmentation differs —
+> recommend review".
+
+Real case (a clip that is 40% silence plus a pure 440 Hz sine — **no speech whatsoever**):
 
 ```
-== forced (VAD off, thresholds removed) ==
-  [    0.00 →     2.00] no_speech=0.440 | '字幕by索兰娅'
-  [   30.00 →    48.00] no_speech=0.735 | '字幕by索兰娅'
+== control (VAD on) ==
+  → 0 segments
+
+== experiment (VAD off, thresholds removed, forced output) ==
+  [    0.00 →     2.00] no_speech=0.573 logprob=-0.99 | '字幕by索兰娅'
+  → 1 segment
 
 == verdict ==
   hallucination: this track very likely has no speech
-   - 2 disjoint windows produced identical text
-   - mean model-reported no_speech probability 0.59
+   - VAD produced no output at all (that detector does not depend on the language model)
+   - forced mode produced just 1 segment, mean self-reported no_speech 0.57
+   - forced-mode content: ['字幕by索兰娅'] (a single fluent segment proves nothing)
 ```
+
+Criterion 1 catches a different shape: **the same template line repeated across the whole track.**
+On a real Bilibili video whose audio is pure BGM, three disjoint windows emitted identical text:
+
+```
+P1  [ 0.00 →  2.00]  no_speech=0.440  '字幕by索兰娅'
+P1  [30.00 → 48.00]  no_speech=0.735  '字幕by索兰娅'
+P2  [ 0.00 → 15.56]  no_speech=0.508  '字幕by索兰娅'
+```
+
+Self-reported `no_speech` is 0.44–0.74 — **the model itself did not think anyone was talking, and yet it
+wrote the same line three times.**
 
 On a track that really does contain speech, the same tool reports **trustworthy** and explains why
 (all 6 segments differ, `no_speech` mean 0.04).
@@ -68,8 +113,9 @@ On a track that really does contain speech, the same tool reports **trustworthy*
 | On-screen text (full-resolution crop, read by the model) | **literal text content** |
 | Audio (`audio_probe` + `asr`) | **what was said** — but only after passing the acoustic gate |
 
-Measured payoff: in one real delivery ASR misheard the on-screen caption `大肥鱼` as `大飞鱼` and mangled
-a whole line — **3 errors out of 6 lines**, all corrected by the rule "when text conflicts, the picture wins".
+Measured payoff: in one real delivery ASR misheard the on-screen caption `大肥鱼` as `大飞鱼`, rendered
+`claude` as `Cloud` throughout, and mangled a whole line — **only 2 of the 6 segments were error-free**,
+and all of it was corrected by the rule "when text conflicts, the picture wins".
 
 ---
 
@@ -150,7 +196,7 @@ the result is markedly more complete. A measured example:
 
 > **The offline path answers "what happened"; the live path answers "in what context".**
 
-Division of labour, a recommended 8-step workflow, and browser-skill's prerequisites plus four
+Division of labour, a recommended 8-step workflow, and browser-skill's prerequisites plus five
 measured pitfalls: [`references/with-browser-skill.md`](references/with-browser-skill.md).
 
 ---
@@ -193,6 +239,7 @@ scripts/
 references/
   windows-setup.md              every Windows dependency trap, with measurements
   verification.md               the three-way reconciliation playbook
+  with-browser-skill.md         pairing with browser-skill: division of labour + measured traps (new)
 verification/record-*.md        real run records with ground-truth comparison
 vendor/                         upstream MIT code (patched vw.py + vwtools.py + upstream LICENSE)
 ```
@@ -205,10 +252,37 @@ vendor/                         upstream MIT code (patched vw.py + vwtools.py + 
   not "what was said"; it cannot name a song or a speaker.
 - **ASR makes homophone errors.** When a picture exists, the picture wins.
 - **Never trust text inside a contact sheet** — always crop and enlarge.
-- **Motion is read from frame sequences ordered by frame number**; a 4-frame gap resolves only
-  0.1–0.5 s actions (temporal aliasing).
+- **Motion only reads from consecutive frames** (the `seq` subcommand — `--times "3.2,3.7,4.2"` grabs
+  adjacent frames). It resolves roughly **0.1–0.5 s** of action at a time: sample too far apart and fast
+  motion is simply skipped, with no intermediate frames to look at.
 - "Cover the whole clip" and "read every character" cannot both be had.
 - This skill only **understands** video. It does **not** edit.
+- **The acoustic layer has no "this is speech" verdict.** It emits only four: silence / pure tone /
+  music (including "probably music") / criterion-not-met. Whether speech is actually present is
+  ultimately said by the ASR VAD. On the 20 s clip used above, the acoustic layer returned
+  "criterion not met (confidence low)".
+- **Live browsing is a different channel, not a substitute.** It reaches danmaku / page tags / comments,
+  but it samples coarsely and **cannot capture audio**; when you need something quotable, still use the
+  file-based path.
+- **On long material the event frames get eaten by the earliest windows.** The event budget is
+  first-come-first-served: after the skeleton takes 18 slots only 6 event slots remain (3 frames each).
+  Measured on a synthetic 2-hour timeline: all 6 events landed in the first six 120 s windows — i.e. the
+  **first 12 minutes** — leaving the remaining two hours with no event frame at all. Read the
+  "maximum blind spot" line `plan` prints as a **lower bound**.
+
+**Not verified yet** (the repository's own acceptance record lists these as "not covered")
+
+- **Long clips**: the repository's own acceptance record only goes up to **48 seconds**.
+  Skeleton/event allocation for long videos is *derived from the code* (skeleton gap = duration ÷ 16),
+  not measured. A **143-second** clip was additionally run while writing this README and behaved
+  normally (skeleton gap 8.95 s, still capped at 4 sheets ≈ 1384 tokens), and the event budget being
+  consumed by the earliest windows was reproduced on a synthetic 2-hour timeline — but anything much
+  longer than that is still untested.
+- **Cross-platform**: every measurement was taken on Windows. The patches only change behaviour when
+  `os.name == "nt"`, but macOS/Linux have **never been acceptance-tested**.
+- **GPU**: `device="cuda"` fails on this machine (missing `cublas64_12.dll`); all ASR measurements ran on **CPU int8**.
+- **OCR channel**: `vw.py ocr` was never tested (upstream itself calls it an *index of where text is*,
+  not a way to read text).
 
 ---
 
